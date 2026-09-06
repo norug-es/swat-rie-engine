@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SWAT RIE Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">SWAT Reality Intelligence Engine</p>
+          <h1>Consola de verificacion evidence-relative</h1>
+          <p class="lede">
+            Pega una afirmacion, analiza una URL, adjunta evidencias y revisa el veredicto persistido por el motor.
+          </p>
+        </div>
+        <div class="status-panel">
+          <span id="health-dot" class="dot dot-waiting"></span>
+          <div>
+            <strong id="health-title">Comprobando servicio</strong>
+            <span id="health-detail">/v1/health</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <form id="verify-form" class="panel panel-primary">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Nueva investigacion</p>
+              <h2>Datos a validar</h2>
+            </div>
+            <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">API docs</a>
+          </div>
+
+          <label class="field">
+            <span>API key</span>
+            <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="RIE_API_KEY" required />
+          </label>
+
+          <div class="mode-switch" role="radiogroup" aria-label="Modo de entrada">
+            <label>
+              <input type="radio" name="mode" value="text" checked />
+              <span>Texto</span>
+            </label>
+            <label>
+              <input type="radio" name="mode" value="url" />
+              <span>URL</span>
+            </label>
+          </div>
+
+          <label id="text-field" class="field">
+            <span>Texto o afirmacion</span>
+            <textarea id="text-input" rows="9" maxlength="50000" placeholder="Ej: El ayuntamiento aprobo la medida el martes. La resolucion fue publicada oficialmente el miercoles."></textarea>
+          </label>
+
+          <label id="url-field" class="field hidden">
+            <span>URL origen</span>
+            <input id="url-input" type="url" placeholder="https://medio.example/articulo" />
+          </label>
+
+          <label class="check-row">
+            <input id="autonomous-search" type="checkbox" />
+            <span>Buscar evidencias automaticamente</span>
+          </label>
+
+          <label class="field">
+            <span>Query de evidencia opcional</span>
+            <input id="evidence-query" type="text" maxlength="500" placeholder="Ej: comunicado oficial Banco Central Bitcoin pagos" />
+          </label>
+
+          <div class="evidence-header">
+            <div>
+              <span>Evidencias URL</span>
+              <small>Maximo 12 fuentes publicas HTTP/HTTPS</small>
+            </div>
+            <button id="add-evidence" type="button" class="ghost-button">+ evidencia</button>
+          </div>
+          <div id="evidence-list" class="evidence-list"></div>
+
+          <div class="actions">
+            <button id="submit-button" type="submit" class="primary-button">Verificar</button>
+            <button id="search-previous" type="button" class="secondary-button">Buscar previo</button>
+            <button id="reset-button" type="button" class="secondary-button">Limpiar</button>
+          </div>
+        </form>
+
+        <aside class="side-column">
+          <section class="panel compact">
+            <p class="eyebrow">Buscar resultado</p>
+            <h2>Investigacion guardada</h2>
+            <label class="field">
+              <span>Investigation ID</span>
+              <input id="investigation-id" type="text" placeholder="uuid devuelto por el motor" />
+            </label>
+            <button id="load-investigation" type="button" class="secondary-button full">Cargar investigacion</button>
+          </section>
+
+          <section class="panel compact">
+            <p class="eyebrow">Contrato v0.1</p>
+            <ul class="capabilities">
+              <li>Texto o URL, nunca ambos</li>
+              <li>Extraccion conservadora de claims</li>
+              <li>Evidencias web con proteccion SSRF</li>
+              <li>Scoring multidimensional y fingerprints SHA-256</li>
+              <li>Evidence Graph, auditoria y certificado verificable</li>
+              <li>Veredictos: SUPPORTED, CONTRADICTED, MIXED, INSUFFICIENT_EVIDENCE</li>
+              <li>Persistencia SQLite por investigation_id</li>
+            </ul>
+          </section>
+
+          <section class="panel compact">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Search stack</p>
+                <h2>Proveedores</h2>
+              </div>
+              <button id="load-providers" type="button" class="ghost-button">Ver</button>
+            </div>
+            <div id="providers-list" class="providers-list"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="result-panel" class="panel result hidden" aria-live="polite">
+        <div class="result-topline">
+          <div>
+            <p class="eyebrow">Resultado</p>
+            <h2 id="result-verdict">Sin resultado</h2>
+          </div>
+          <div class="confidence">
+            <span id="result-confidence">0%</span>
+            <small>confianza</small>
+          </div>
+        </div>
+
+        <div class="result-meta">
+          <span id="result-id"></span>
+          <button id="copy-id" type="button" class="ghost-button">Copiar ID</button>
+        </div>
+
+        <div class="dimension-panel">
+          <h3>Reality dimensions</h3>
+          <div id="dimensions-list" class="dimensions-list"></div>
+        </div>
+
+        <div class="result-grid">
+          <div>
+            <h3>Claims</h3>
+            <div id="claims-list" class="stack"></div>
+          </div>
+          <div>
+            <h3>Evidencia</h3>
+            <div id="evidence-result-list" class="stack"></div>
+          </div>
+        </div>
+
+        <div class="result-grid">
+          <div>
+            <h3>Evidence Graph</h3>
+            <div id="graph-list" class="graph-list"></div>
+          </div>
+          <div>
+            <h3>Certificado</h3>
+            <div id="certificate-box" class="certificate-box"></div>
+            <button id="load-certificate" type="button" class="secondary-button full">Cargar certificado</button>
+          </div>
+        </div>
+
+        <div class="notes">
+          <div>
+            <h3>Explicacion</h3>
+            <ul id="explanation-list"></ul>
+          </div>
+          <div>
+            <h3>Limitaciones</h3>
+            <ul id="limitations-list"></ul>
+          </div>
+        </div>
+
+        <div class="review-box">
+          <h3>Revision humana</h3>
+          <div class="review-grid">
+            <label class="field">
+              <span>Accion</span>
+              <select id="review-action">
+                <option value="CONFIRM">Confirmar analisis</option>
+                <option value="REQUEST_MORE_EVIDENCE">Pedir mas evidencia</option>
+                <option value="CERTIFY">Certificar</option>
+                <option value="DISPUTE">Disputar</option>
+                <option value="REOPEN">Reabrir</option>
+                <option value="OVERRIDE">Override verdict</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Analista</span>
+              <input id="review-analyst" type="text" placeholder="Nombre o equipo" />
+            </label>
+            <label class="field">
+              <span>Verdict override</span>
+              <select id="review-verdict">
+                <option value="">Sin cambio</option>
+                <option>SUPPORTED</option>
+                <option>CONTRADICTED</option>
+                <option>MIXED</option>
+                <option>MISLEADING</option>
+                <option>FALSE_CONTEXT</option>
+                <option>INSUFFICIENT_EVIDENCE</option>
+                <option>INCONCLUSIVE</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>Notas</span>
+            <textarea id="review-notes" rows="3" maxlength="2000" placeholder="Criterio humano, evidencia pendiente o razon de certificacion"></textarea>
+          </label>
+          <button id="submit-review" type="button" class="primary-button">Registrar revision</button>
+          <div id="reviews-list" class="stack"></div>
+        </div>
+      </section>
+
+      <div id="toast" class="toast hidden"></div>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

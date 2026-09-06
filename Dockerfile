@@ -15,6 +15,6 @@ COPY --chown=rie:rie app ./app
 COPY --chown=rie:rie tests ./tests
 
 USER rie
-EXPOSE 8080
+EXPOSE 8082
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082"]

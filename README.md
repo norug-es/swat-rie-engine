@@ -14,9 +14,26 @@ persists the complete investigation.
 - claim extraction
 - evidence fetching + readable-text extraction
 - conservative claim scoring
+- content type detection for text/web URLs and declared media surfaces
+- SHA-256 content and evidence fingerprints
+- source classification and reliability weighting
+- multidimensional Reality Scoring
+- Evidence Graph generation
+- reproducible audit trail
+- certificate hash + certificate endpoint
+- human review workflow
+- autonomous evidence discovery through a configured search provider
+- reverse/media search provider registry for Google Lens, Bing Visual Search, Yandex Images, TinEye, InVID, perceptual hashes, and local semantic search
 - aggregate verdict
 - SQLite persistence
 - `GET /v1/reality/investigations/{id}`
+- `GET /v1/reality/investigations/{id}/claims`
+- `GET /v1/reality/investigations/{id}/evidence`
+- `GET /v1/reality/investigations/{id}/certificate`
+- `POST /v1/reality/investigations/{id}/review`
+- `POST /v1/reality/media/search`
+- `POST /v1/reality/evidence/discover`
+- `GET /v1/reality/reverse-search/providers`
 - API-key protection
 - SSRF protection against private/non-routable destinations
 - container hardening: non-root, read-only root filesystem, dropped capabilities
@@ -26,7 +43,15 @@ Verdicts:
 - `SUPPORTED`
 - `CONTRADICTED`
 - `MIXED`
+- `MISLEADING`
+- `FALSE_CONTEXT`
+- `MANIPULATED_MEDIA`
+- `AI_GENERATED`
+- `SATIRE`
+- `OUTDATED`
+- `UNVERIFIED`
 - `INSUFFICIENT_EVIDENCE`
+- `INCONCLUSIVE`
 
 ## What v0.1 intentionally does NOT do
 
@@ -46,19 +71,29 @@ Those should be added only after the base contract and evidence provenance are s
 cp .env.example .env
 # edit .env and set a strong RIE_API_KEY
 docker compose up -d --build
-curl http://127.0.0.1:8088/v1/health
+curl http://127.0.0.1:8082/v1/health
 ```
+
+Frontend console:
+
+```text
+http://127.0.0.1:8082/
+```
+
+Use the `RIE_API_KEY` value from `.env`, choose `Texto` or `URL`, add up to 12
+public evidence URLs, and run the verification from the browser. The console also
+loads persisted results by `investigation_id`.
 
 Docs:
 
 ```text
-http://127.0.0.1:8088/docs
+http://127.0.0.1:8082/docs
 ```
 
 ## First test
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8088/v1/reality/verify \
+curl -sS -X POST http://127.0.0.1:8082/v1/reality/verify \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: replace-with-a-long-random-secret' \
   -d '{
@@ -101,15 +136,54 @@ Representative response:
 ```json
 {
   "investigation_id": "uuid",
+  "status": "COMPLETE",
+  "review_status": "AI_ANALYSIS",
   "engine": "SWAT Reality Intelligence Engine",
   "version": "0.1.0",
+  "input_type": "TEXT",
+  "source": {},
+  "content_hash": "sha256",
   "verdict": "INSUFFICIENT_EVIDENCE",
   "confidence": 0.0,
+  "dimensions": {
+    "media_authenticity": 1.0,
+    "claim_factuality": 0.0,
+    "source_reliability": 0.0,
+    "temporal_consistency": 0.0,
+    "geolocation_consistency": 0.0,
+    "provenance_confidence": 0.0,
+    "deepfake_probability": 0.0
+  },
   "claims": [],
   "evidence": [],
+  "evidence_graph": {
+    "nodes": [],
+    "edges": []
+  },
   "explanation": [],
-  "limitations": []
+  "limitations": [],
+  "audit_trail": [],
+  "reviews": [],
+  "certificate_hash": "sha256"
 }
+```
+
+### Review and certificate
+
+```bash
+curl -sS http://127.0.0.1:8082/v1/reality/investigations/{id}/certificate \
+  -H 'X-API-Key: replace-with-a-long-random-secret'
+```
+
+```bash
+curl -sS -X POST http://127.0.0.1:8082/v1/reality/investigations/{id}/review \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: replace-with-a-long-random-secret' \
+  -d '{
+    "action": "CERTIFY",
+    "analyst": "SWAT Analyst",
+    "notes": "Reviewed against provided evidence."
+  }'
 ```
 
 ## SWAT integration target
@@ -136,6 +210,42 @@ POST /v1/intelligence/reality/verify
 ```
 
 The Gateway forwards to RIE and writes the normalized RIE result into the Unified Threat Graph.
+
+## Autonomous evidence discovery
+
+`POST /v1/reality/verify` can discover evidence URLs before scoring when
+`autonomous_search` is true:
+
+```json
+{
+  "text": "El Banco Central prohibio todos los pagos con Bitcoin ayer.",
+  "autonomous_search": true,
+  "evidence_query": "Banco Central Bitcoin pagos comunicado oficial"
+}
+```
+
+The first executable provider is Bing Web Search:
+
+```env
+RIE_SEARCH_PROVIDER=bing
+RIE_BING_SEARCH_API_KEY=...
+RIE_MAX_DISCOVERED_EVIDENCE=5
+```
+
+Without provider credentials, RIE returns `MISSING_CONFIG` and records that in
+the investigation explanation and audit trail instead of fabricating evidence.
+
+Visual reverse search providers are exposed through:
+
+```text
+GET /v1/reality/reverse-search/providers
+```
+
+Google Lens, Yandex Images and InVID are currently manual/browser workflow
+connectors. Bing Visual Search and TinEye are ready to become API-backed once
+their credentials and request contracts are added. Exact SHA-256 matching and
+local claim/evidence matching are active now; pHash/dHash require the media
+ingestion pipeline.
 
 ## Production gates before v0.2
 
