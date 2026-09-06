@@ -1,0 +1,28 @@
+services:
+  rie:
+    build:
+      context: .
+    environment:
+      RIE_API_KEY: ${RIE_API_KEY:?set RIE_API_KEY in .env}
+      RIE_DB_URL: sqlite:////data/rie.db
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - rie-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/v1/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  rie-data:
