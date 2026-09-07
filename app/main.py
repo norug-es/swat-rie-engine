@@ -211,7 +211,7 @@ def login_page():
 @app.post("/v1/reality/verify", response_model=VerifyResponse, dependencies=[Depends(require_api_key)])
 async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
     if bool(req.text) == bool(req.url):
-        raise HTTPException(status_code=422, detail="provide exactly one of text or url")
+        raise HTTPException(status_code=422, detail="Debes indicar exactamente uno: Texto o URL. Cambia el modo de entrada y deja vacío el otro campo.")
 
     source_text = req.text or ""
     source_url = str(req.url) if req.url else None

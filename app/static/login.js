@@ -23,7 +23,24 @@ async function request(path, body) {
 async function redirectIfAuthenticated() {
   const response = await fetch("/auth/status");
   const status = await response.json();
-  if (status.authenticated) window.location.replace("/");
+  if (!status.authenticated) return;
+  if (qrToken) {
+    await approveQrFromToken();
+    return;
+  }
+  window.location.replace("/");
+}
+
+const qrToken = new URLSearchParams(window.location.search).get("qr");
+const qrParts = qrToken?.split(".");
+
+async function approveQrFromToken() {
+  if (!qrParts || qrParts.length !== 2) return;
+  await request("/auth/qr/approve", {
+    challenge_id: qrParts[0],
+    secret: qrParts[1],
+  });
+  document.querySelector(".auth-panel").innerHTML = '<div class="auth-confirmation"><p class="eyebrow">SWAT RIE</p><h2>Sesión aprobada</h2><p class="lede">Ya puedes volver al navegador donde escaneaste el código.</p></div>';
 }
 
 document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
@@ -42,7 +59,11 @@ document.querySelector("#login-form")?.addEventListener("submit", async (event) 
       email: document.querySelector("#login-email").value,
       password: document.querySelector("#login-password").value,
     });
-    window.location.replace("/");
+    if (qrToken) {
+      await approveQrFromToken();
+    } else {
+      window.location.replace("/");
+    }
   } catch (error) {
     showToast(error.message);
   }
@@ -94,17 +115,8 @@ document.querySelector("#start-qr")?.addEventListener("click", async () => {
   }
 });
 
-const qrToken = new URLSearchParams(window.location.search).get("qr");
 if (qrToken) {
-  const separator = qrToken.indexOf(".");
-  if (separator > 0) {
-    request("/auth/qr/approve", {
-      challenge_id: qrToken.slice(0, separator),
-      secret: qrToken.slice(separator + 1),
-    }).then(() => {
-      document.querySelector(".auth-panel").innerHTML = '<div class="auth-confirmation"><p class="eyebrow">SWAT RIE</p><h2>Sesión aprobada</h2><p class="lede">Ya puedes volver al equipo donde escaneaste el código.</p></div>';
-    }).catch(() => showToast("Inicia sesión en este móvil para aprobar el QR."));
-  }
+  document.querySelector("#qr-status").textContent = "Inicia sesión en este móvil para aprobar el acceso del navegador.";
 }
 
-redirectIfAuthenticated();
+redirectIfAuthenticated().catch(() => showToast("No se pudo validar la sesión."));

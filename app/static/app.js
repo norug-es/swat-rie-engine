@@ -145,7 +145,11 @@ async function apiFetch(path, options = {}) {
 
   if (!response.ok) {
     const detail = data?.detail || `${response.status} ${response.statusText}`;
-    throw new Error(Array.isArray(detail) ? JSON.stringify(detail) : detail);
+    if (Array.isArray(detail)) {
+      const fields = detail.map((item) => `${item.loc?.slice(-1)[0] || "campo"}: ${item.msg}`).join("; ");
+      throw new Error(`Solicitud inválida (${response.status}): ${fields}`);
+    }
+    throw new Error(`${response.status}: ${detail}`);
   }
 
   return data;
@@ -160,7 +164,11 @@ async function apiFormFetch(path, formData) {
   const data = parseApiResponse(text);
   if (!response.ok) {
     const detail = data?.detail || `${response.status} ${response.statusText}`;
-    throw new Error(Array.isArray(detail) ? JSON.stringify(detail) : detail);
+    if (Array.isArray(detail)) {
+      const fields = detail.map((item) => `${item.loc?.slice(-1)[0] || "campo"}: ${item.msg}`).join("; ");
+      throw new Error(`Solicitud inválida (${response.status}): ${fields}`);
+    }
+    throw new Error(`${response.status}: ${detail}`);
   }
   return data;
 }
