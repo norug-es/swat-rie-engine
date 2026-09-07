@@ -38,6 +38,9 @@ const els = {
   claimsList: document.querySelector("#claims-list"),
   evidenceResultList: document.querySelector("#evidence-result-list"),
   dimensionsList: document.querySelector("#dimensions-list"),
+  contextStatus: document.querySelector("#context-status"),
+  contextConclusion: document.querySelector("#context-conclusion"),
+  contextSignals: document.querySelector("#context-signals"),
   graphList: document.querySelector("#graph-list"),
   certificateBox: document.querySelector("#certificate-box"),
   loadCertificate: document.querySelector("#load-certificate"),
@@ -271,6 +274,21 @@ function renderDimensions(dimensions = {}) {
   }
 }
 
+function renderContextAssessment(assessment = {}) {
+  const status = assessment.status || "UNRESOLVED";
+  els.contextStatus.textContent = `${status} · ${Math.round(Number(assessment.confidence || 0) * 100)}%`;
+  els.contextStatus.className = `badge ${status === "POTENTIAL_FALSE_CONTEXT" ? "CONTRADICTED" : status === "CONSISTENT" ? "SUPPORTED" : "MIXED"}`;
+  els.contextConclusion.textContent = assessment.conclusion || "Sin evaluación contextual.";
+  const locations = [...(assessment.source_locations || []), ...(assessment.evidence_locations || [])];
+  const dates = [...(assessment.source_dates || []), ...(assessment.evidence_dates || [])];
+  const metadata = [];
+  if (locations.length) metadata.push(`Lugares detectados: ${[...new Set(locations)].join(", ")}`);
+  if (dates.length) metadata.push(`Fechas detectadas: ${[...new Set(dates)].join(", ")}`);
+  els.contextSignals.innerHTML = [...metadata, ...(assessment.signals || [])]
+    .map((signal) => `<div class="item-card">${escapeHtml(signal)}</div>`)
+    .join("") || '<p class="muted">No hay señales temporales o geográficas suficientes.</p>';
+}
+
 function renderGraph(graph = { nodes: [], edges: [] }) {
   const nodes = graph.nodes || [];
   const edges = graph.edges || [];
@@ -367,6 +385,7 @@ function renderResult(result) {
   renderClaims(result.claims);
   renderEvidence(result.evidence);
   renderDimensions(result.dimensions);
+  renderContextAssessment(result.context_assessment);
   renderGraph(result.evidence_graph);
   renderReviews(result.reviews, result.review_status);
   els.certificateBox.innerHTML = `
@@ -548,7 +567,10 @@ els.downloadMedia?.addEventListener("click", async () => {
 });
 
 function bufferFromBase64(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===";
+  const normalized = String(value).replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
+  const remainder = normalized.length % 4;
+  if (remainder === 1) throw new Error("Invalid base64url value from passkey provider");
+  const padded = normalized + "=".repeat((4 - remainder) % 4);
   const binary = atob(padded);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
 }
@@ -584,7 +606,7 @@ els.registerPasskey?.addEventListener("click", async () => {
 els.setupTotp?.addEventListener("click", async () => {
   try {
     const setup = await apiFetch("/auth/totp/setup", { method: "POST", body: "{}" });
-    els.securityResult.innerHTML = `<p>Escanea este URI en tu autenticador:</p><code>${escapeHtml(setup.otpauth_uri)}</code><label class="field"><span>Código generado</span><input id="totp-setup-code" inputmode="numeric" maxlength="6" /></label><button id="verify-totp-setup" type="button" class="primary-button full">Confirmar TOTP</button>`;
+    els.securityResult.innerHTML = `<p><strong>1. Abre tu aplicación autenticadora</strong></p><p class="muted">En Google Authenticator, Microsoft Authenticator o Authy pulsa + y elige escanear un código QR.</p><img class="totp-qr" src="/auth/qr/image?url=${encodeURIComponent(setup.otpauth_uri)}" alt="QR de configuración TOTP" /><details><summary>Configuración manual</summary><p class="muted">Si no puedes escanearlo, introduce esta clave:</p><code>${escapeHtml(setup.secret)}</code></details><label class="field"><span>2. Introduce el código de 6 dígitos</span><input id="totp-setup-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" /></label><button id="verify-totp-setup" type="button" class="primary-button full">Confirmar TOTP</button>`;
     document.querySelector("#verify-totp-setup").addEventListener("click", async () => {
       await apiFetch("/auth/totp/verify", { method: "POST", body: JSON.stringify({ code: document.querySelector("#totp-setup-code").value }) });
       els.securityResult.insertAdjacentHTML("beforeend", "<p class=muted>TOTP activado.</p>");

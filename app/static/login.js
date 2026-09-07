@@ -21,7 +21,10 @@ async function request(path, body) {
 }
 
 function bufferFromBase64(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===";
+  const normalized = String(value).replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
+  const remainder = normalized.length % 4;
+  if (remainder === 1) throw new Error("Invalid base64url value from passkey provider");
+  const padded = normalized + "=".repeat((4 - remainder) % 4);
   const binary = atob(padded);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
 }

@@ -114,6 +114,17 @@ class EvidenceGraph(BaseModel):
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
 
+
+class ContextAssessment(BaseModel):
+    status: Literal["CONSISTENT", "POTENTIAL_FALSE_CONTEXT", "OUTDATED", "UNRESOLVED"] = "UNRESOLVED"
+    confidence: float = 0.0
+    source_locations: list[str] = Field(default_factory=list)
+    evidence_locations: list[str] = Field(default_factory=list)
+    source_dates: list[str] = Field(default_factory=list)
+    evidence_dates: list[str] = Field(default_factory=list)
+    signals: list[str] = Field(default_factory=list)
+    conclusion: str = "No hay señales contextuales suficientes."
+
 class AuditEntry(BaseModel):
     at: str
     stage: str
@@ -155,6 +166,7 @@ class VerifyResponse(BaseModel):
     claims: list[ClaimResult]
     evidence: list[EvidenceItem]
     evidence_graph: EvidenceGraph
+    context_assessment: ContextAssessment = Field(default_factory=ContextAssessment)
     explanation: list[str]
     limitations: list[str]
     audit_trail: list[AuditEntry]

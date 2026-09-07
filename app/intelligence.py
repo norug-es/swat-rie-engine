@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from .models import AuditEntry, EvidenceGraph, EvidenceItem, RealityDimensions, ReviewRequest, ReviewRecord
+from .models import AuditEntry, ContextAssessment, EvidenceGraph, EvidenceItem, RealityDimensions, ReviewRequest, ReviewRecord
 
 ENTITY_RE = re.compile(r"\b[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÜÑáéíóúüñ-]{2,}\b")
 TEMPORAL_TERMS = {
@@ -22,6 +22,13 @@ IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 VIDEO_EXTENSIONS = (".mp4", ".webm", ".mov")
 AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".ogg")
 DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".html")
+LOCATION_ALIASES = {
+    "ceuta": "Ceuta", "melilla": "Melilla", "wakefield": "Wakefield", "london": "London",
+    "madrid": "Madrid", "barcelona": "Barcelona", "valencia": "Valencia", "uk": "United Kingdom",
+    "reino unido": "United Kingdom", "spain": "Spain", "españa": "Spain", "turkey": "Turkey",
+    "turquía": "Turkey", "france": "France", "francia": "France",
+}
+YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 def now_iso() -> str:
@@ -62,6 +69,62 @@ def source_profile(url: str) -> tuple[str, float]:
     if host:
         return "web", 0.55
     return "unknown", 0.3
+
+
+def _locations(text: str) -> list[str]:
+    lowered = text.lower()
+    found = []
+    for alias, label in LOCATION_ALIASES.items():
+        if alias in lowered and label not in found:
+            found.append(label)
+    return found
+
+
+def assess_context(source_text: str, evidence: list[EvidenceItem], evidence_texts: list[str]) -> ContextAssessment:
+    source_locations = _locations(source_text)
+    evidence_locations = []
+    for text in evidence_texts:
+        for location in _locations(text):
+            if location not in evidence_locations:
+                evidence_locations.append(location)
+    source_dates = sorted(set(YEAR_RE.findall(source_text)))
+    evidence_dates = sorted(set(YEAR_RE.findall(" ".join(evidence_texts))))
+    signals = []
+
+    if source_locations and evidence_locations and not set(source_locations) & set(evidence_locations):
+        signals.append(f"La fuente menciona {', '.join(source_locations)}, pero las evidencias mencionan {', '.join(evidence_locations)}.")
+    if source_dates and evidence_dates and not set(source_dates) & set(evidence_dates):
+        signals.append(f"Las fechas no coinciden: fuente {', '.join(source_dates)} frente a evidencias {', '.join(evidence_dates)}.")
+    if any(item.source_type == "news" for item in evidence) and signals:
+        signals.append("Existe una fuente periodística para contrastar el contexto original.")
+
+    if len(signals) >= 2:
+        status = "POTENTIAL_FALSE_CONTEXT"
+        confidence = min(0.9, 0.55 + 0.15 * len(signals))
+        conclusion = "Hay señales fuertes de que el vídeo puede ser real, pero se está compartiendo con un contexto geográfico o temporal distinto."
+    elif signals:
+        status = "UNRESOLVED"
+        confidence = 0.35
+        conclusion = "Hay una discrepancia contextual, pero todavía no basta para afirmar contexto falso."
+    elif source_locations or source_dates:
+        status = "CONSISTENT"
+        confidence = 0.45
+        conclusion = "No se detectó una discrepancia contextual entre el contenido y las evidencias disponibles."
+    else:
+        status = "UNRESOLVED"
+        confidence = 0.0
+        conclusion = "No hay lugares o fechas suficientes para evaluar reutilización fuera de contexto."
+
+    return ContextAssessment(
+        status=status,
+        confidence=round(confidence, 3),
+        source_locations=source_locations,
+        evidence_locations=evidence_locations,
+        source_dates=source_dates,
+        evidence_dates=evidence_dates,
+        signals=signals,
+        conclusion=conclusion,
+    )
 
 
 def extract_entities(text: str) -> list[str]:

@@ -463,6 +463,15 @@ h3 {
   font-size: 0.78rem;
 }
 
+.totp-qr {
+  display: block;
+  width: 210px;
+  max-width: 100%;
+  margin: 14px auto;
+  padding: 10px;
+  background: #fff;
+}
+
 .artifact-box ul {
   margin: 0;
   padding-left: 18px;
@@ -519,12 +528,17 @@ h3 {
 }
 
 .dimension-panel,
-.review-box {
+.review-box,
+.context-panel {
   margin-top: 22px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
   background: #fffaf0;
+}
+
+.context-panel {
+  margin-top: 22px;
 }
 
 .dimensions-list {

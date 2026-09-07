@@ -51,6 +51,7 @@ from .intelligence import (
     build_evidence_graph,
     certificate_hash,
     certificate_payload,
+    assess_context,
     detect_input_type,
     enrich_claim,
     enrich_evidence,
@@ -408,6 +409,10 @@ async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
     results = [enrich_claim(c, evaluate_claim(c, evidence_texts), index) for index, c in enumerate(claims)]
     verdict, confidence = aggregate(results)
     evidence_items = assign_evidence_scores(evidence_items, results)
+    context_assessment = assess_context(source_text, evidence_items, evidence_texts)
+    if context_assessment.status == "POTENTIAL_FALSE_CONTEXT" and verdict == "INSUFFICIENT_EVIDENCE":
+        verdict = "FALSE_CONTEXT"
+        confidence = context_assessment.confidence
     content_hash = sha256_text(source_text)
     source = {
         "type": input_type,
@@ -468,6 +473,7 @@ async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
         claims=results,
         evidence=evidence_items,
         evidence_graph=graph,
+        context_assessment=context_assessment,
         explanation=explanation,
         limitations=limitations,
         audit_trail=audit_trail,

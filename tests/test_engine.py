@@ -2,6 +2,8 @@ from app.engine import aggregate, evaluate_claim, extract_claims
 from app import db
 from app.config import settings
 from app.media import sha256_bytes
+from app.intelligence import assess_context
+from app.models import EvidenceItem
 from app.main import app
 from fastapi.testclient import TestClient
 from pathlib import Path
@@ -26,6 +28,23 @@ def test_aggregate_insufficient():
     }])
     assert verdict == "INSUFFICIENT_EVIDENCE"
     assert confidence == 0.0
+
+
+def test_context_assessment_flags_geographic_and_temporal_mismatch():
+    evidence = [EvidenceItem(
+        evidence_id="ev-001",
+        url="https://www.dailymail.co.uk/news/example",
+        source_type="news",
+        source_reliability=0.72,
+        status="FETCHED",
+    )]
+    assessment = assess_context(
+        "El vídeo ocurrió en Ceuta durante 2025.",
+        evidence,
+        ["The incident happened in Wakefield in 2024, according to the report."],
+    )
+    assert assessment.status == "POTENTIAL_FALSE_CONTEXT"
+    assert assessment.confidence >= 0.7
 
 
 def test_db_path_falls_back_when_configured_path_is_not_writable(monkeypatch):
