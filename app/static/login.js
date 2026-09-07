@@ -20,6 +20,49 @@ async function request(path, body) {
   return data;
 }
 
+function bufferFromBase64(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===";
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
+}
+
+function base64FromBuffer(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function credentialPayload(credential) {
+  return {
+    id: credential.id,
+    rawId: base64FromBuffer(credential.rawId),
+    type: credential.type,
+    response: Object.fromEntries(Object.entries(credential.response).map(([key, value]) => [
+      key,
+      value instanceof ArrayBuffer ? base64FromBuffer(value) : value,
+    ])),
+  };
+}
+
+async function loginWithPasskey() {
+  if (!window.PublicKeyCredential) throw new Error("Este navegador no admite passkeys.");
+  const { challenge_id: challengeId, options } = await request("/auth/passkey/login/options", {});
+  options.challenge = bufferFromBase64(options.challenge);
+  if (options.allowCredentials) options.allowCredentials = options.allowCredentials.map((item) => ({ ...item, id: bufferFromBase64(item.id) }));
+  const credential = await navigator.credentials.get({ publicKey: options });
+  await request("/auth/passkey/login/verify", { challenge_id: challengeId, credential: credentialPayload(credential) });
+  await finishLogin();
+}
+
+async function finishLogin() {
+  if (qrToken) {
+    await approveQrFromToken();
+  } else {
+    window.location.replace("/");
+  }
+}
+
 async function redirectIfAuthenticated() {
   const response = await fetch("/auth/status");
   const status = await response.json();
@@ -52,18 +95,32 @@ document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
   });
 });
 
-document.querySelector("#login-form")?.addEventListener("submit", async (event) => {
+document.querySelector("#passkey-login")?.addEventListener("click", async () => {
+  try {
+    await loginWithPasskey();
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+document.querySelector("#show-totp-login")?.addEventListener("click", () => {
+  document.querySelector("#login-form").classList.add("hidden");
+  document.querySelector("#totp-login-form").classList.remove("hidden");
+});
+
+document.querySelector("#show-passkey-login")?.addEventListener("click", () => {
+  document.querySelector("#totp-login-form").classList.add("hidden");
+  document.querySelector("#login-form").classList.remove("hidden");
+});
+
+document.querySelector("#totp-login-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await request("/auth/login", {
-      email: document.querySelector("#login-email").value,
-      password: document.querySelector("#login-password").value,
+    await request("/auth/totp/login", {
+      email: document.querySelector("#totp-email").value,
+      code: document.querySelector("#totp-code").value,
     });
-    if (qrToken) {
-      await approveQrFromToken();
-    } else {
-      window.location.replace("/");
-    }
+    await finishLogin();
   } catch (error) {
     showToast(error.message);
   }
@@ -74,7 +131,6 @@ document.querySelector("#register-form")?.addEventListener("submit", async (even
   try {
     await request("/auth/register", {
       email: document.querySelector("#register-email").value,
-      password: document.querySelector("#register-password").value,
     });
     window.location.replace("/");
   } catch (error) {

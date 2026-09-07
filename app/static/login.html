@@ -22,18 +22,25 @@
           </div>
           <form id="login-form" class="auth-form">
             <label class="field"><span>Email</span><input id="login-email" type="email" required autocomplete="email" /></label>
-            <label class="field"><span>Contraseña</span><input id="login-password" type="password" required autocomplete="current-password" /></label>
-            <button class="primary-button full" type="submit">Entrar</button>
+            <button id="passkey-login" class="primary-button full" type="button">Entrar con passkey / biometría</button>
+            <p class="muted auth-help">Usa Face ID, huella, Windows Hello o el PIN del dispositivo.</p>
+            <button id="show-totp-login" class="secondary-button full" type="button">Usar código TOTP</button>
           </form>
           <form id="register-form" class="auth-form hidden">
             <label class="field"><span>Email</span><input id="register-email" type="email" required autocomplete="email" /></label>
-            <label class="field"><span>Contraseña</span><input id="register-password" type="password" minlength="8" required autocomplete="new-password" /></label>
-            <button class="primary-button full" type="submit">Crear cuenta</button>
+            <button class="primary-button full" type="submit">Crear cuenta y configurar passkey</button>
+            <p class="muted auth-help">La contraseña no se usa para iniciar sesión. Configurarás biometría o TOTP después.</p>
           </form>
           <form id="recover-form" class="auth-form hidden">
             <label class="field"><span>Email de la cuenta</span><input id="recover-email" type="email" required /></label>
             <button class="secondary-button full" type="submit">Generar recuperación</button>
             <p id="recovery-result" class="muted"></p>
+          </form>
+          <form id="totp-login-form" class="auth-form hidden">
+            <label class="field"><span>Email</span><input id="totp-email" type="email" required autocomplete="email" /></label>
+            <label class="field"><span>Código de autenticador</span><input id="totp-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" /></label>
+            <button class="primary-button full" type="submit">Entrar con TOTP</button>
+            <button id="show-passkey-login" class="ghost-button full" type="button">Volver a passkey</button>
           </form>
           <div class="qr-login">
             <div><strong>Entrar desde el móvil</strong><p class="muted">Genera un QR en este equipo y apruébalo desde tu teléfono.</p></div>

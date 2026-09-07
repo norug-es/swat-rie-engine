@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+import base64
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -46,6 +48,22 @@ def init_auth_db() -> None:
             created_at TEXT NOT NULL, expires_at TEXT NOT NULL, approved_at TEXT
         )
         """)
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS auth_challenges (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, user_id TEXT, challenge TEXT NOT NULL,
+            created_at TEXT NOT NULL, expires_at TEXT NOT NULL
+        )
+        """)
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS passkeys (
+            credential_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+        )
+        """)
+        try:
+            con.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT")
+        except __import__("sqlite3").OperationalError:
+            pass
         try:
             con.execute("ALTER TABLE investigations ADD COLUMN owner_id TEXT")
         except __import__("sqlite3").OperationalError:
@@ -55,7 +73,7 @@ def init_auth_db() -> None:
 def create_user(user_id: str, email: str, password: str) -> None:
     init_auth_db()
     with __import__("sqlite3").connect(_path()) as con:
-        con.execute("INSERT INTO users VALUES (?, ?, ?, ?, NULL, NULL)", (user_id, email.lower(), hash_password(password), now()))
+        con.execute("INSERT INTO users (id, email, password_hash, created_at, reset_token_hash, reset_expires_at, totp_secret) VALUES (?, ?, ?, ?, NULL, NULL, NULL)", (user_id, email.lower(), hash_password(password), now()))
 
 
 def get_user_by_email(email: str) -> dict | None:
@@ -122,6 +140,58 @@ def reset_password(token: str, password: str) -> bool:
             return False
         con.execute("UPDATE users SET password_hash = ?, reset_token_hash = NULL, reset_expires_at = NULL WHERE id = ?", (hash_password(password), row[0]))
     return True
+
+
+def create_auth_challenge(kind: str, user_id: str | None, challenge: bytes) -> str:
+    init_auth_db()
+    challenge_id = secrets.token_urlsafe(18)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
+    with __import__("sqlite3").connect(_path()) as con:
+        con.execute("INSERT INTO auth_challenges VALUES (?, ?, ?, ?, ?, ?)", (challenge_id, kind, user_id, base64.urlsafe_b64encode(challenge).decode(), now(), expires.isoformat()))
+    return challenge_id
+
+
+def consume_auth_challenge(challenge_id: str, kind: str) -> dict | None:
+    init_auth_db()
+    with __import__("sqlite3").connect(_path()) as con:
+        con.row_factory = __import__("sqlite3").Row
+        row = con.execute("DELETE FROM auth_challenges WHERE id = ? AND kind = ? AND expires_at > ? RETURNING *", (challenge_id, kind, now())).fetchone()
+    if not row:
+        return None
+    payload = dict(row)
+    payload["challenge"] = base64.urlsafe_b64decode(payload["challenge"] + "===")
+    return payload
+
+
+def save_passkey(credential_id: bytes, user_id: str, public_key: bytes, sign_count: int) -> None:
+    init_auth_db()
+    with __import__("sqlite3").connect(_path()) as con:
+        con.execute("INSERT OR REPLACE INTO passkeys VALUES (?, ?, ?, ?, ?)", (base64.urlsafe_b64encode(credential_id).decode(), user_id, base64.urlsafe_b64encode(public_key).decode(), sign_count, now()))
+
+
+def get_passkey(credential_id: bytes) -> dict | None:
+    init_auth_db()
+    encoded = base64.urlsafe_b64encode(credential_id).decode()
+    with __import__("sqlite3").connect(_path()) as con:
+        con.row_factory = __import__("sqlite3").Row
+        row = con.execute("SELECT * FROM passkeys WHERE credential_id = ?", (encoded,)).fetchone()
+    if not row:
+        return None
+    payload = dict(row)
+    payload["credential_id"] = base64.urlsafe_b64decode(payload["credential_id"] + "===")
+    payload["public_key"] = base64.urlsafe_b64decode(payload["public_key"] + "===")
+    return payload
+
+
+def update_passkey_counter(credential_id: bytes, sign_count: int) -> None:
+    with __import__("sqlite3").connect(_path()) as con:
+        con.execute("UPDATE passkeys SET sign_count = ? WHERE credential_id = ?", (sign_count, base64.urlsafe_b64encode(credential_id).decode()))
+
+
+def set_totp_secret(user_id: str, secret: str) -> None:
+    init_auth_db()
+    with __import__("sqlite3").connect(_path()) as con:
+        con.execute("UPDATE users SET totp_secret = ? WHERE id = ?", (secret, user_id))
 
 
 def create_qr_challenge(user_id: str | None = None) -> tuple[str, str]:

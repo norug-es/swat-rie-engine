@@ -24,6 +24,9 @@ const els = {
   uploadMedia: document.querySelector("#upload-media"),
   mediaUrl: document.querySelector("#media-url"),
   downloadMedia: document.querySelector("#download-media"),
+  registerPasskey: document.querySelector("#register-passkey"),
+  setupTotp: document.querySelector("#setup-totp"),
+  securityResult: document.querySelector("#security-result"),
   artifactBox: document.querySelector("#artifact-box"),
   investigationId: document.querySelector("#investigation-id"),
   resultPanel: document.querySelector("#result-panel"),
@@ -542,6 +545,51 @@ els.downloadMedia?.addEventListener("click", async () => {
     els.downloadMedia.disabled = false;
     els.downloadMedia.textContent = "Descargar y analizar";
   }
+});
+
+function bufferFromBase64(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===";
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
+}
+
+function base64FromBuffer(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function passkeyCredentialPayload(credential) {
+  return {
+    id: credential.id,
+    rawId: base64FromBuffer(credential.rawId),
+    type: credential.type,
+    response: Object.fromEntries(Object.entries(credential.response).map(([key, value]) => [key, value instanceof ArrayBuffer ? base64FromBuffer(value) : value])),
+  };
+}
+
+els.registerPasskey?.addEventListener("click", async () => {
+  try {
+    const { challenge_id: challengeId, options } = await apiFetch("/auth/passkey/register/options", { method: "POST", body: "{}" });
+    options.challenge = bufferFromBase64(options.challenge);
+    options.user.id = bufferFromBase64(options.user.id);
+    if (options.excludeCredentials) options.excludeCredentials = options.excludeCredentials.map((item) => ({ ...item, id: bufferFromBase64(item.id) }));
+    const credential = await navigator.credentials.create({ publicKey: options });
+    await apiFetch("/auth/passkey/register/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, credential: passkeyCredentialPayload(credential) }) });
+    els.securityResult.textContent = "Passkey registrada correctamente.";
+  } catch (error) { showToast(error.message); }
+});
+
+els.setupTotp?.addEventListener("click", async () => {
+  try {
+    const setup = await apiFetch("/auth/totp/setup", { method: "POST", body: "{}" });
+    els.securityResult.innerHTML = `<p>Escanea este URI en tu autenticador:</p><code>${escapeHtml(setup.otpauth_uri)}</code><label class="field"><span>Código generado</span><input id="totp-setup-code" inputmode="numeric" maxlength="6" /></label><button id="verify-totp-setup" type="button" class="primary-button full">Confirmar TOTP</button>`;
+    document.querySelector("#verify-totp-setup").addEventListener("click", async () => {
+      await apiFetch("/auth/totp/verify", { method: "POST", body: JSON.stringify({ code: document.querySelector("#totp-setup-code").value }) });
+      els.securityResult.insertAdjacentHTML("beforeend", "<p class=muted>TOTP activado.</p>");
+    });
+  } catch (error) { showToast(error.message); }
 });
 
 els.loadCertificate?.addEventListener("click", async () => {

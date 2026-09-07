@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     api_key: str = "change-me"
     public_url: str = "http://localhost:8000"
+    webauthn_rp_id: str = "localhost"
+    webauthn_origin: str = "http://localhost:8000"
+    webauthn_rp_name: str = "SWAT RIE"
     db_url: str = "sqlite:///./data/rie.db"
     fetch_timeout_seconds: float = 12.0
     max_source_chars: int = 30000

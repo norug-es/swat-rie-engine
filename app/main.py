@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
+import base64
+import json
+import secrets
 
 from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -11,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .auth import (
     approve_qr,
+    create_auth_challenge,
+    consume_auth_challenge,
     consume_qr,
     create_qr_challenge,
     create_reset_token,
@@ -19,7 +24,11 @@ from .auth import (
     delete_session,
     get_user_by_email,
     get_user_by_session,
+    get_passkey,
     reset_password,
+    save_passkey,
+    set_totp_secret,
+    update_passkey_counter,
     verify_password,
 )
 from .db import (
@@ -63,6 +72,15 @@ from .models import (
     VerifyResponse,
 )
 from .security import require_api_key
+import pyotp
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers.structs import AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement
 
 app = FastAPI(
     title=settings.app_name,
@@ -74,7 +92,7 @@ app = FastAPI(
 
 class RegisterRequest(BaseModel):
     email: str
-    password: str
+    password: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -96,27 +114,35 @@ class QrApproveRequest(BaseModel):
     secret: str
 
 
+class PasskeyFinishRequest(BaseModel):
+    challenge_id: str
+    credential: dict
+
+
+class TotpCodeRequest(BaseModel):
+    email: str
+    code: str
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str
+
+
 @app.post("/auth/register")
 def register(req: RegisterRequest, response: Response):
     if "@" not in req.email:
         raise HTTPException(status_code=422, detail="valid email required")
-    if len(req.password) < 8:
-        raise HTTPException(status_code=422, detail="password must contain at least 8 characters")
     if get_user_by_email(req.email):
         raise HTTPException(status_code=409, detail="email already registered")
     user_id = str(uuid4())
-    create_user(user_id, req.email, req.password)
+    create_user(user_id, req.email, req.password or secrets.token_urlsafe(32))
     response.set_cookie("rie_session", create_session(user_id), httponly=True, samesite="lax", secure=False, max_age=604800)
     return {"email": req.email.lower()}
 
 
 @app.post("/auth/login")
 def login(req: LoginRequest, response: Response):
-    user = get_user_by_email(req.email)
-    if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="invalid credentials")
-    response.set_cookie("rie_session", create_session(user["id"]), httponly=True, samesite="lax", secure=False, max_age=604800)
-    return {"email": user["email"]}
+    raise HTTPException(status_code=410, detail="password login disabled; use passkey or TOTP")
 
 
 @app.post("/auth/logout")
@@ -138,6 +164,111 @@ def me(session_id: str | None = Cookie(default=None, alias="rie_session")):
 def auth_status(session_id: str | None = Cookie(default=None, alias="rie_session")):
     user = get_user_by_session(session_id)
     return {"authenticated": bool(user), "email": user["email"] if user else None}
+
+
+def _raw_id(credential: dict) -> bytes:
+    encoded = credential.get("rawId") or credential.get("id")
+    if not encoded:
+        raise HTTPException(status_code=422, detail="passkey credential id missing")
+    return base64.urlsafe_b64decode(encoded + "===")
+
+
+@app.post("/auth/passkey/register/options")
+def passkey_register_options(user: dict = Depends(require_api_key)):
+    challenge = secrets.token_bytes(32)
+    options = generate_registration_options(
+        rp_id=settings.webauthn_rp_id,
+        rp_name=settings.webauthn_rp_name,
+        user_name=user["email"],
+        user_display_name=user["email"],
+        user_id=user["id"].encode(),
+        challenge=challenge,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+    challenge_id = create_auth_challenge("passkey_register", user["id"], challenge)
+    return {"challenge_id": challenge_id, "options": json.loads(options_to_json(options))}
+
+
+@app.post("/auth/passkey/register/verify")
+def passkey_register_verify(req: PasskeyFinishRequest, user: dict = Depends(require_api_key)):
+    challenge = consume_auth_challenge(req.challenge_id, "passkey_register")
+    if not challenge or challenge["user_id"] != user["id"]:
+        raise HTTPException(status_code=422, detail="passkey challenge expired or invalid")
+    try:
+        verified = verify_registration_response(
+            credential=req.credential,
+            expected_challenge=challenge["challenge"],
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"passkey registration failed: {exc}") from exc
+    save_passkey(verified.credential_id, user["id"], verified.credential_public_key, verified.sign_count)
+    return {"ok": True}
+
+
+@app.post("/auth/passkey/login/options")
+def passkey_login_options():
+    challenge = secrets.token_bytes(32)
+    options = generate_authentication_options(
+        rp_id=settings.webauthn_rp_id,
+        challenge=challenge,
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    challenge_id = create_auth_challenge("passkey_login", None, challenge)
+    return {"challenge_id": challenge_id, "options": json.loads(options_to_json(options))}
+
+
+@app.post("/auth/passkey/login/verify")
+def passkey_login_verify(req: PasskeyFinishRequest, response: Response):
+    challenge = consume_auth_challenge(req.challenge_id, "passkey_login")
+    credential_id = _raw_id(req.credential)
+    stored = get_passkey(credential_id)
+    if not challenge or not stored:
+        raise HTTPException(status_code=401, detail="unknown or expired passkey")
+    try:
+        verified = verify_authentication_response(
+            credential=req.credential,
+            expected_challenge=challenge["challenge"],
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            credential_public_key=stored["public_key"],
+            credential_current_sign_count=stored["sign_count"],
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"passkey authentication failed: {exc}") from exc
+    update_passkey_counter(credential_id, verified.new_sign_count)
+    response.set_cookie("rie_session", create_session(stored["user_id"]), httponly=True, samesite="lax", secure=False, max_age=604800)
+    return {"ok": True}
+
+
+@app.post("/auth/totp/setup")
+def totp_setup(user: dict = Depends(require_api_key)):
+    secret = pyotp.random_base32()
+    set_totp_secret(user["id"], secret)
+    uri = pyotp.TOTP(secret).provisioning_uri(name=user["email"], issuer_name=settings.webauthn_rp_name)
+    return {"secret": secret, "otpauth_uri": uri}
+
+
+@app.post("/auth/totp/verify")
+def totp_verify(req: TotpVerifyRequest, user: dict = Depends(require_api_key)):
+    if not user.get("totp_secret") or not pyotp.TOTP(user["totp_secret"]).verify(req.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="invalid TOTP code")
+    return {"ok": True}
+
+
+@app.post("/auth/totp/login")
+def totp_login(req: TotpCodeRequest, response: Response):
+    user = get_user_by_email(req.email)
+    if not user or not user.get("totp_secret") or not pyotp.TOTP(user["totp_secret"]).verify(req.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="invalid TOTP credentials")
+    response.set_cookie("rie_session", create_session(user["id"]), httponly=True, samesite="lax", secure=False, max_age=604800)
+    return {"ok": True, "email": user["email"]}
 
 
 @app.post("/auth/recover")

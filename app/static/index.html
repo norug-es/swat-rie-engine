@@ -133,6 +133,14 @@
             <button id="download-media" type="button" class="secondary-button full">Descargar y analizar</button>
             <div id="artifact-box" class="artifact-box"></div>
           </section>
+
+          <section class="panel compact security-panel">
+            <p class="eyebrow">Seguridad de la cuenta</p>
+            <h2>Passkey y TOTP</h2>
+            <button id="register-passkey" type="button" class="secondary-button full">Registrar passkey / biometría</button>
+            <button id="setup-totp" type="button" class="secondary-button full">Configurar TOTP</button>
+            <div id="security-result" class="artifact-box"></div>
+          </section>
         </aside>
       </section>
 
@@ -236,6 +244,6 @@
 
       <div id="toast" class="toast hidden"></div>
     </main>
-    <script src="/app.js?v=20260907-3" defer></script>
+    <script src="/app.js?v=20260907-4" defer></script>
   </body>
 </html>
