@@ -351,7 +351,7 @@ function renderResult(result) {
   els.resultConfidence.textContent = `${Math.round((result.confidence || 0) * 100)}%`;
   els.resultId.textContent = result.investigation_id ? `ID: ${result.investigation_id}` : "";
   els.resultSource.innerHTML = result.source?.url
-    ? `Origen: <a class="evidence-link" href="${escapeHtml(result.source.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(result.source.url)}</a>`
+    ? `Origen: <a class="evidence-link" href="${escapeHtml(result.source.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(result.source.url)}</a>${result.source.artifact_id ? `<small>Artefacto analizado: ${escapeHtml(result.source.artifact_id)}</small>` : ""}`
     : "";
   renderClaims(result.claims);
   renderEvidence(result.evidence);

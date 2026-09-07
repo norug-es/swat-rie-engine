@@ -220,10 +220,25 @@ async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
     evidence_texts: list[str] = []
 
     source_fetch_error = None
+    downloaded_artifact = None
     if source_url:
         if input_type in {"IMAGE", "VIDEO", "AUDIO", "DOCUMENT"}:
-            source_text = f"Remote {input_type.lower()} content submitted for investigation: {source_url}"
-            source_fetch_error = f"{input_type.lower()} remote downloader is not configured; upload the file through /v1/reality/media/ingest for artifact analysis"
+            if input_type in {"VIDEO", "AUDIO"} and settings.remote_media_enabled:
+                try:
+                    filename, extension, media_data = download_remote_media(source_url)
+                    downloaded_artifact = ingest_media(filename, f"video/{extension}" if extension else "video/mp4", media_data)
+                    save_media_artifact(downloaded_artifact)
+                    transcript = downloaded_artifact.get("metadata", {}).get("transcription") or {}
+                    source_text = (transcript.get("text") or "").strip()
+                    if not source_text:
+                        source_text = f"Remote {input_type.lower()} content submitted for investigation: {source_url}"
+                        source_fetch_error = f"{input_type.lower()} downloaded, but no readable transcription was produced"
+                except Exception as exc:
+                    source_text = f"Remote {input_type.lower()} content submitted for investigation: {source_url}"
+                    source_fetch_error = f"{input_type.lower()} download failed: {str(exc)[:300]}"
+            else:
+                source_text = f"Remote {input_type.lower()} content submitted for investigation: {source_url}"
+                source_fetch_error = f"{input_type.lower()} remote analysis is not configured"
         else:
             try:
                 page = await fetch_page(source_url)
@@ -268,6 +283,7 @@ async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
         "url": source_url,
         "mode": req.mode,
         "extracted_chars": len(source_text),
+        "artifact_id": downloaded_artifact["artifact_id"] if downloaded_artifact else None,
     }
     dimensions = build_dimensions(source_text, input_type, results, evidence_items, confidence)
 
@@ -277,6 +293,8 @@ async def verify(req: VerifyRequest, user: dict = Depends(require_api_key)):
         "Dimensions are computed from fetched evidence, claim scores, source type and provenance coverage.",
         "Verdict is evidence-relative; it is not a certification of absolute truth.",
     ]
+    if downloaded_artifact is not None:
+        explanation.insert(1, f"Remote media downloaded and analyzed as artifact {downloaded_artifact['artifact_id']}.")
     if discovery is not None:
         explanation.insert(2, f"Autonomous evidence discovery: {discovery.status} via {discovery.provider}.")
     limitations = [

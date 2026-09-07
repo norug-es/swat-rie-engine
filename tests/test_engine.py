@@ -179,5 +179,9 @@ def test_remote_video_url_is_recorded_as_unverified_investigation():
     payload = response.json()
     assert payload["input_type"] == "VIDEO"
     assert payload["verdict"] == "INSUFFICIENT_EVIDENCE"
-    assert any("remote downloader is not configured" in item for item in payload["limitations"])
+    if payload["source"].get("artifact_id"):
+        assert payload["source"]["extracted_chars"] > 0
+        assert any("downloaded and analyzed as artifact" in item for item in payload["explanation"])
+    else:
+        assert any("download failed" in item or "no readable transcription" in item for item in payload["limitations"])
     assert any("Local image, video, audio and document uploads are ingested" in item for item in payload["limitations"])
