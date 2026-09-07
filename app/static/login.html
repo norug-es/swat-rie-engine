@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acceso | SWAT RIE</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="auth-screen">
+        <div class="auth-copy">
+          <p class="eyebrow">SWAT Reality Intelligence Engine</p>
+          <h1>Investiga con identidad, no con secretos compartidos.</h1>
+          <p class="lede">Accede con tu cuenta o aprueba la sesión desde el móvil escaneando un QR.</p>
+        </div>
+        <div class="auth-panel panel">
+          <div class="auth-tabs">
+            <button type="button" class="auth-tab active" data-auth-tab="login">Entrar</button>
+            <button type="button" class="auth-tab" data-auth-tab="register">Crear cuenta</button>
+            <button type="button" class="auth-tab" data-auth-tab="recover">Recuperar</button>
+          </div>
+          <form id="login-form" class="auth-form">
+            <label class="field"><span>Email</span><input id="login-email" type="email" required autocomplete="email" /></label>
+            <label class="field"><span>Contraseña</span><input id="login-password" type="password" required autocomplete="current-password" /></label>
+            <button class="primary-button full" type="submit">Entrar</button>
+          </form>
+          <form id="register-form" class="auth-form hidden">
+            <label class="field"><span>Email</span><input id="register-email" type="email" required autocomplete="email" /></label>
+            <label class="field"><span>Contraseña</span><input id="register-password" type="password" minlength="8" required autocomplete="new-password" /></label>
+            <button class="primary-button full" type="submit">Crear cuenta</button>
+          </form>
+          <form id="recover-form" class="auth-form hidden">
+            <label class="field"><span>Email de la cuenta</span><input id="recover-email" type="email" required /></label>
+            <button class="secondary-button full" type="submit">Generar recuperación</button>
+            <p id="recovery-result" class="muted"></p>
+          </form>
+          <div class="qr-login">
+            <div><strong>Entrar desde el móvil</strong><p class="muted">Genera un QR en este equipo y apruébalo desde tu teléfono.</p></div>
+            <button id="start-qr" type="button" class="ghost-button full">Mostrar QR</button>
+            <img id="qr-image" class="hidden" alt="Código QR para iniciar sesión" />
+            <p id="qr-status" class="muted"></p>
+          </div>
+        </div>
+      </section>
+      <div id="toast" class="toast hidden"></div>
+    </main>
+    <script src="/login.js?v=20260907-2" defer></script>
+  </body>
+</html>

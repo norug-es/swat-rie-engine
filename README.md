@@ -24,6 +24,8 @@ persists the complete investigation.
 - human review workflow
 - autonomous evidence discovery through a configured search provider
 - reverse/media search provider registry for Google Lens, Bing Visual Search, Yandex Images, TinEye, InVID, perceptual hashes, and local semantic search
+- multimedia artifact ingestion for image, audio, video and document uploads
+- media signature validation, SHA-256 artifact fingerprints, storage, ffprobe metadata, audio normalization, and video keyframe extraction when FFmpeg is available
 - aggregate verdict
 - SQLite persistence
 - `GET /v1/reality/investigations/{id}`
@@ -34,6 +36,8 @@ persists the complete investigation.
 - `POST /v1/reality/media/search`
 - `POST /v1/reality/evidence/discover`
 - `GET /v1/reality/reverse-search/providers`
+- `POST /v1/reality/media/ingest`
+- `GET /v1/reality/media/artifacts/{artifact_id}`
 - API-key protection
 - SSRF protection against private/non-routable destinations
 - container hardening: non-root, read-only root filesystem, dropped capabilities
@@ -56,8 +60,8 @@ Verdicts:
 ## What v0.1 intentionally does NOT do
 
 - autonomous search-engine discovery
-- TikTok/video download
-- frame/audio analysis
+- TikTok/social video remote download
+- media transcription, OCR, frame extraction and deepfake ensemble execution
 - deepfake detection
 - geolocation
 - source-reputation graph
@@ -246,6 +250,34 @@ connectors. Bing Visual Search and TinEye are ready to become API-backed once
 their credentials and request contracts are added. Exact SHA-256 matching and
 local claim/evidence matching are active now; pHash/dHash require the media
 ingestion pipeline.
+
+## Multimedia ingestion
+
+Upload local media as an untrusted artifact:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8082/v1/reality/media/ingest \
+  -H 'X-API-Key: replace-with-a-long-random-secret' \
+  -F 'file=@sample.mp3'
+```
+
+RIE stores the artifact under `RIE_ARTIFACT_DIR`, calculates SHA-256, validates
+basic file signatures, runs `ffprobe` for audio/video metadata, normalizes audio
+to WAV 16 kHz mono, and extracts up to 12 video keyframes when FFmpeg is available.
+
+Transcription uses `faster-whisper` only when explicitly enabled:
+
+```env
+RIE_TRANSCRIPTION_ENABLED=true
+RIE_WHISPER_MODEL=tiny
+```
+
+Install/cache the selected Whisper model in the runtime environment before
+enabling transcription. If the model is unavailable, the pipeline records
+`TRANSCRIPTION: FAILED` instead of blocking artifact ingestion.
+
+OCR, perceptual hashes and deepfake/audio detectors are explicit pipeline stages
+and return `MISSING_TOOL` until those workers are installed.
 
 ## Production gates before v0.2
 

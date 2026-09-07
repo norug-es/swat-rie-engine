@@ -5,6 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system rie && adduser --system --ingroup rie rie \
     && mkdir -p /app/data && chown -R rie:rie /app
 

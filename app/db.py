@@ -42,12 +42,24 @@ def init_db() -> None:
             response_json TEXT NOT NULL
         )
         """)
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS media_artifacts (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            input_type TEXT NOT NULL,
+            response_json TEXT NOT NULL
+        )
+        """)
+    from .auth import init_auth_db
+    init_auth_db()
 
-def save_investigation(iid: str, created_at: str, verdict: str, confidence: float, request: dict, response: dict) -> None:
+def save_investigation(iid: str, created_at: str, verdict: str, confidence: float, request: dict, response: dict, owner_id: str | None = None) -> None:
+    init_db()
     with sqlite3.connect(_path()) as con:
         con.execute(
-            "INSERT INTO investigations VALUES (?, ?, ?, ?, ?, ?)",
-            (iid, created_at, verdict, confidence, json.dumps(request), json.dumps(response)),
+            "INSERT INTO investigations (id, created_at, verdict, confidence, request_json, response_json, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (iid, created_at, verdict, confidence, json.dumps(request), json.dumps(response), owner_id),
         )
 
 def get_investigation(iid: str) -> dict | None:
@@ -68,3 +80,34 @@ def update_investigation(iid: str, response: dict) -> None:
             "UPDATE investigations SET verdict = ?, confidence = ?, response_json = ? WHERE id = ?",
             (response["verdict"], response["confidence"], json.dumps(response), iid),
         )
+
+def save_media_artifact(artifact: dict) -> None:
+    init_db()
+    with sqlite3.connect(_path()) as con:
+        con.execute(
+            "INSERT OR REPLACE INTO media_artifacts VALUES (?, ?, ?, ?, ?)",
+            (
+                artifact["artifact_id"],
+                artifact["created_at"],
+                artifact["sha256"],
+                artifact["input_type"],
+                json.dumps(artifact),
+            ),
+        )
+
+def get_media_artifact(artifact_id: str) -> dict | None:
+    init_db()
+    with sqlite3.connect(_path()) as con:
+        row = con.execute(
+            "SELECT response_json FROM media_artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    return json.loads(row[0]) if row else None
+
+def find_media_artifact_by_hash(sha256: str) -> dict | None:
+    init_db()
+    with sqlite3.connect(_path()) as con:
+        row = con.execute(
+            "SELECT response_json FROM media_artifacts WHERE sha256 = ? ORDER BY created_at DESC LIMIT 1",
+            (sha256,),
+        ).fetchone()
+    return json.loads(row[0]) if row else None

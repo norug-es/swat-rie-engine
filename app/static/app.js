@@ -1,10 +1,11 @@
 const state = {
   lastResult: null,
+  qrPoll: null,
 };
 
 const els = {
   form: document.querySelector("#verify-form"),
-  apiKey: document.querySelector("#api-key"),
+  logoutButton: document.querySelector("#logout-button"),
   textField: document.querySelector("#text-field"),
   urlField: document.querySelector("#url-field"),
   textInput: document.querySelector("#text-input"),
@@ -19,11 +20,17 @@ const els = {
   loadInvestigation: document.querySelector("#load-investigation"),
   loadProviders: document.querySelector("#load-providers"),
   providersList: document.querySelector("#providers-list"),
+  mediaFile: document.querySelector("#media-file"),
+  uploadMedia: document.querySelector("#upload-media"),
+  mediaUrl: document.querySelector("#media-url"),
+  downloadMedia: document.querySelector("#download-media"),
+  artifactBox: document.querySelector("#artifact-box"),
   investigationId: document.querySelector("#investigation-id"),
   resultPanel: document.querySelector("#result-panel"),
   resultVerdict: document.querySelector("#result-verdict"),
   resultConfidence: document.querySelector("#result-confidence"),
   resultId: document.querySelector("#result-id"),
+  resultSource: document.querySelector("#result-source"),
   copyId: document.querySelector("#copy-id"),
   claimsList: document.querySelector("#claims-list"),
   evidenceResultList: document.querySelector("#evidence-result-list"),
@@ -46,10 +53,11 @@ const els = {
 };
 
 function getMode() {
-  return document.querySelector('input[name="mode"]:checked').value;
+  return document.querySelector('input[name="mode"]:checked')?.value || "text";
 }
 
 function showToast(message) {
+  if (!els.toast) return;
   els.toast.textContent = message;
   els.toast.classList.remove("hidden");
   window.clearTimeout(showToast.timer);
@@ -57,6 +65,7 @@ function showToast(message) {
 }
 
 function setBusy(isBusy) {
+  if (!els.submitButton) return;
   els.submitButton.disabled = isBusy;
   els.submitButton.textContent = isBusy ? "Verificando..." : "Verificar";
 }
@@ -123,22 +132,16 @@ function buildPayload() {
 }
 
 async function apiFetch(path, options = {}) {
-  const apiKey = els.apiKey.value.trim();
-  if (!apiKey) {
-    throw new Error("Introduce la API key.");
-  }
-
   const response = await fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": apiKey,
       ...(options.headers || {}),
     },
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseApiResponse(text);
 
   if (!response.ok) {
     const detail = data?.detail || `${response.status} ${response.statusText}`;
@@ -146,6 +149,29 @@ async function apiFetch(path, options = {}) {
   }
 
   return data;
+}
+
+async function apiFormFetch(path, formData) {
+  const response = await fetch(path, {
+    method: "POST",
+    body: formData,
+  });
+  const text = await response.text();
+  const data = parseApiResponse(text);
+  if (!response.ok) {
+    const detail = data?.detail || `${response.status} ${response.statusText}`;
+    throw new Error(Array.isArray(detail) ? JSON.stringify(detail) : detail);
+  }
+  return data;
+}
+
+function parseApiResponse(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) };
+  }
 }
 
 function renderList(listEl, items) {
@@ -191,9 +217,11 @@ function renderEvidence(evidence = []) {
     const card = document.createElement("article");
     card.className = "item-card";
     const detail = ev.error ? `<p class="muted">${escapeHtml(ev.error)}</p>` : "";
+    const url = ev.url ? `<a class="evidence-link" href="${escapeHtml(ev.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(ev.url)}</a>` : "";
     card.innerHTML = `
       <span class="badge ${ev.status}">${ev.status}</span>
       <p>${escapeHtml(ev.title || ev.url)}</p>
+      ${url}
       <div class="metrics">
         <span>${ev.extracted_chars} caracteres extraidos</span>
         <span>${escapeHtml(ev.source_type || "unknown")}</span>
@@ -280,12 +308,51 @@ function renderProviders(providers = []) {
   }
 }
 
+function renderArtifact(artifact) {
+  const pipeline = (artifact.pipeline || [])
+    .map((item) => `<li><strong>${escapeHtml(item.stage)}</strong>: ${escapeHtml(item.status)}${item.detail ? ` - ${escapeHtml(item.detail)}` : ""}</li>`)
+    .join("");
+  const transcription = artifact.metadata?.transcription?.text
+    ? `<p><strong>Transcripcion</strong></p><p class="muted">${escapeHtml(artifact.metadata.transcription.text)}</p>`
+    : "";
+  const normalized = artifact.metadata?.normalized_audio_path
+    ? `<p class="muted">WAV normalizado: ${escapeHtml(artifact.metadata.normalized_audio_path)}</p>`
+    : "";
+  const keyframes = artifact.metadata?.keyframes?.length
+    ? `<p class="muted">Keyframes: ${artifact.metadata.keyframes.length}</p>`
+    : "";
+  els.artifactBox.innerHTML = `
+    <p><strong>${escapeHtml(artifact.input_type)}</strong> ${escapeHtml(artifact.filename)}</p>
+    <p class="muted">${artifact.size_bytes} bytes</p>
+    <code>${escapeHtml(artifact.sha256)}</code>
+    ${normalized}
+    ${keyframes}
+    ${transcription}
+    <button type="button" class="ghost-button" id="search-artifact">Buscar hash</button>
+    <ul>${pipeline}</ul>
+  `;
+  document.querySelector("#search-artifact").addEventListener("click", async () => {
+    try {
+      const result = await apiFetch("/v1/reality/media/search", {
+        method: "POST",
+        body: JSON.stringify({ sha256: artifact.sha256 }),
+      });
+      showToast(result.previously_seen ? `Artefacto visto: ${result.artifact_id}` : "Artefacto no visto antes.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+}
+
 function renderResult(result) {
   state.lastResult = result;
   els.resultPanel.classList.remove("hidden");
   els.resultVerdict.textContent = result.verdict;
   els.resultConfidence.textContent = `${Math.round((result.confidence || 0) * 100)}%`;
   els.resultId.textContent = result.investigation_id ? `ID: ${result.investigation_id}` : "";
+  els.resultSource.innerHTML = result.source?.url
+    ? `Origen: <a class="evidence-link" href="${escapeHtml(result.source.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(result.source.url)}</a>`
+    : "";
   renderClaims(result.claims);
   renderEvidence(result.evidence);
   renderDimensions(result.dimensions);
@@ -325,6 +392,27 @@ async function checkHealth() {
   }
 }
 
+async function authRequest(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "No se pudo completar la operación.");
+  return data;
+}
+
+async function requireSession() {
+  const response = await fetch("/auth/me");
+  if (!response.ok) window.location.replace("/login");
+}
+
+els.logoutButton?.addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST" });
+  window.location.replace("/login");
+});
+
 document.querySelectorAll('input[name="mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
     const isText = getMode() === "text";
@@ -333,16 +421,16 @@ document.querySelectorAll('input[name="mode"]').forEach((radio) => {
   });
 });
 
-els.addEvidence.addEventListener("click", () => addEvidenceRow());
+els.addEvidence?.addEventListener("click", () => addEvidenceRow());
 
-els.resetButton.addEventListener("click", () => {
+els.resetButton?.addEventListener("click", () => {
   els.form.reset();
   els.evidenceList.innerHTML = "";
   els.resultPanel.classList.add("hidden");
   addEvidenceRow("https://example.com/");
 });
 
-els.form.addEventListener("submit", async (event) => {
+els.form?.addEventListener("submit", async (event) => {
   event.preventDefault();
   setBusy(true);
   try {
@@ -359,7 +447,7 @@ els.form.addEventListener("submit", async (event) => {
   }
 });
 
-els.searchPrevious.addEventListener("click", async () => {
+els.searchPrevious?.addEventListener("click", async () => {
   try {
     const payload = buildPayload();
     delete payload.evidence_urls;
@@ -378,7 +466,7 @@ els.searchPrevious.addEventListener("click", async () => {
   }
 });
 
-els.loadInvestigation.addEventListener("click", async () => {
+els.loadInvestigation?.addEventListener("click", async () => {
   const id = els.investigationId.value.trim();
   if (!id) {
     showToast("Indica un investigation_id.");
@@ -396,7 +484,7 @@ els.loadInvestigation.addEventListener("click", async () => {
   }
 });
 
-els.loadProviders.addEventListener("click", async () => {
+els.loadProviders?.addEventListener("click", async () => {
   try {
     const providers = await apiFetch("/v1/reality/reverse-search/providers", {
       method: "GET",
@@ -408,7 +496,47 @@ els.loadProviders.addEventListener("click", async () => {
   }
 });
 
-els.loadCertificate.addEventListener("click", async () => {
+els.uploadMedia?.addEventListener("click", async () => {
+  const file = els.mediaFile.files[0];
+  if (!file) {
+    showToast("Selecciona un archivo.");
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const artifact = await apiFormFetch("/v1/reality/media/ingest", formData);
+    renderArtifact(artifact);
+    showToast("Artefacto ingerido.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+els.downloadMedia?.addEventListener("click", async () => {
+  const url = els.mediaUrl.value.trim();
+  if (!url) {
+    showToast("Indica una URL de vídeo.");
+    return;
+  }
+  els.downloadMedia.disabled = true;
+  els.downloadMedia.textContent = "Descargando...";
+  try {
+    const artifact = await apiFetch("/v1/reality/media/ingest-url", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+    renderArtifact(artifact);
+    showToast("Vídeo descargado y preparado para análisis.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    els.downloadMedia.disabled = false;
+    els.downloadMedia.textContent = "Descargar y analizar";
+  }
+});
+
+els.loadCertificate?.addEventListener("click", async () => {
   const id = state.lastResult?.investigation_id || els.investigationId.value.trim();
   if (!id) {
     showToast("Primero carga o genera una investigacion.");
@@ -426,7 +554,7 @@ els.loadCertificate.addEventListener("click", async () => {
   }
 });
 
-els.submitReview.addEventListener("click", async () => {
+els.submitReview?.addEventListener("click", async () => {
   const id = state.lastResult?.investigation_id || els.investigationId.value.trim();
   if (!id) {
     showToast("Primero carga o genera una investigacion.");
@@ -459,11 +587,14 @@ els.submitReview.addEventListener("click", async () => {
   }
 });
 
-els.copyId.addEventListener("click", async () => {
+els.copyId?.addEventListener("click", async () => {
   if (!state.lastResult?.investigation_id) return;
   await navigator.clipboard.writeText(state.lastResult.investigation_id);
   showToast("Investigation ID copiado.");
 });
 
-addEvidenceRow("https://example.com/");
-checkHealth();
+if (els.form) {
+  addEvidenceRow("https://example.com/");
+  checkHealth();
+  requireSession();
+}

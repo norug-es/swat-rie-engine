@@ -1,6 +1,7 @@
 from app.engine import aggregate, evaluate_claim, extract_claims
 from app import db
 from app.config import settings
+from app.media import sha256_bytes
 from app.main import app
 from fastapi.testclient import TestClient
 from pathlib import Path
@@ -118,3 +119,65 @@ def test_verify_contract_includes_rie_mvp_surfaces():
     assert "Google Lens" in names
     assert "Bing Visual Search" in names
     assert "TinEye" in names
+
+
+def test_media_ingest_persists_audio_artifact(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "artifact_dir", str(tmp_path / "artifacts"))
+    client = TestClient(app)
+    media = b"ID3" + b"\x00" * 128
+
+    response = client.post(
+        "/v1/reality/media/ingest",
+        headers={"X-API-Key": settings.api_key},
+        files={"file": ("sample.mp3", media, "audio/mpeg")},
+    )
+
+    assert response.status_code == 200
+    artifact = response.json()
+    assert artifact["input_type"] == "AUDIO"
+    assert artifact["sha256"] == sha256_bytes(media)
+    assert artifact["pipeline"][0]["stage"] == "SIGNATURE_VALIDATION"
+    stages = {item["stage"]: item["status"] for item in artifact["pipeline"]}
+    assert "AUDIO_NORMALIZATION" in stages
+    assert stages["TRANSCRIPTION"] in {"COMPLETE", "MISSING_CONFIG", "MISSING_TOOL", "FAILED", "SKIPPED"}
+
+    loaded = client.get(
+        f"/v1/reality/media/artifacts/{artifact['artifact_id']}",
+        headers={"X-API-Key": settings.api_key},
+    )
+    assert loaded.status_code == 200
+    assert loaded.json()["sha256"] == artifact["sha256"]
+
+    transcribed = client.post(
+        f"/v1/reality/media/artifacts/{artifact['artifact_id']}/transcribe",
+        headers={"X-API-Key": settings.api_key},
+    )
+    assert transcribed.status_code == 200
+    transcribed_stages = {item["stage"]: item["status"] for item in transcribed.json()["pipeline"]}
+    assert "TRANSCRIPTION" in transcribed_stages
+
+    search = client.post(
+        "/v1/reality/media/search",
+        headers={"X-API-Key": settings.api_key},
+        json={"sha256": artifact["sha256"]},
+    )
+    assert search.status_code == 200
+    assert search.json()["previously_seen"] is True
+    assert search.json()["matched_on"] == "artifact_hash"
+
+
+def test_remote_video_url_is_recorded_as_unverified_investigation():
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/reality/verify",
+        headers={"X-API-Key": settings.api_key},
+        json={"url": "https://vm.tiktok.com/ZN8YxjmDs/"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["input_type"] == "VIDEO"
+    assert payload["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert any("remote downloader is not configured" in item for item in payload["limitations"])
+    assert any("Local image, video, audio and document uploads are ingested" in item for item in payload["limitations"])

@@ -22,10 +22,11 @@
             <strong id="health-title">Comprobando servicio</strong>
             <span id="health-detail">/v1/health</span>
           </div>
+          <button id="logout-button" type="button" class="secondary-button">Cerrar sesión</button>
         </div>
       </section>
 
-      <section class="workspace">
+      <section id="workspace" class="workspace">
         <form id="verify-form" class="panel panel-primary">
           <div class="panel-heading">
             <div>
@@ -34,11 +35,6 @@
             </div>
             <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">API docs</a>
           </div>
-
-          <label class="field">
-            <span>API key</span>
-            <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="RIE_API_KEY" required />
-          </label>
 
           <div class="mode-switch" role="radiogroup" aria-label="Modo de entrada">
             <label>
@@ -62,19 +58,19 @@
           </label>
 
           <label class="check-row">
-            <input id="autonomous-search" type="checkbox" />
-            <span>Buscar evidencias automaticamente</span>
+            <input id="autonomous-search" type="checkbox" checked />
+            <span>Buscar evidencias automáticamente</span>
           </label>
 
           <label class="field">
             <span>Query de evidencia opcional</span>
-            <input id="evidence-query" type="text" maxlength="500" placeholder="Ej: comunicado oficial Banco Central Bitcoin pagos" />
+            <input id="evidence-query" type="text" maxlength="500" placeholder="Si queda vacío, se genera desde la afirmación" />
           </label>
 
           <div class="evidence-header">
             <div>
               <span>Evidencias URL</span>
-              <small>Maximo 12 fuentes publicas HTTP/HTTPS</small>
+              <small>Fuentes públicas HTTP/HTTPS que respaldan o contradicen el texto o URL principal. Máximo 12.</small>
             </div>
             <button id="add-evidence" type="button" class="ghost-button">+ evidencia</button>
           </div>
@@ -121,6 +117,22 @@
             </div>
             <div id="providers-list" class="providers-list"></div>
           </section>
+
+          <section class="panel compact">
+            <p class="eyebrow">Media ingestion</p>
+            <h2>Audio / video / imagen</h2>
+            <label class="field">
+              <span>Archivo</span>
+              <input id="media-file" type="file" accept="audio/*,video/*,image/*,.pdf,.docx,.html" />
+            </label>
+            <button id="upload-media" type="button" class="secondary-button full">Ingerir artefacto</button>
+            <label class="field">
+              <span>Descargar vídeo desde URL</span>
+              <input id="media-url" type="url" placeholder="https://www.tiktok.com/@cuenta/video/..." />
+            </label>
+            <button id="download-media" type="button" class="secondary-button full">Descargar y analizar</button>
+            <div id="artifact-box" class="artifact-box"></div>
+          </section>
         </aside>
       </section>
 
@@ -138,6 +150,7 @@
 
         <div class="result-meta">
           <span id="result-id"></span>
+          <span id="result-source"></span>
           <button id="copy-id" type="button" class="ghost-button">Copiar ID</button>
         </div>
 
@@ -223,6 +236,6 @@
 
       <div id="toast" class="toast hidden"></div>
     </main>
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=20260907-2" defer></script>
   </body>
 </html>

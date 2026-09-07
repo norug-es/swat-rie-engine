@@ -4,11 +4,21 @@ services:
       context: .
     environment:
       RIE_API_KEY: ${RIE_API_KEY:?set RIE_API_KEY in .env}
-      RIE_DB_URL: sqlite:////data/rie.db
+      RIE_DB_URL: sqlite:////app/data/rie.db
+      RIE_ARTIFACT_DIR: /app/data/artifacts
+      RIE_PUBLIC_URL: ${RIE_PUBLIC_URL:-http://localhost:8082}
+      RIE_SEARCH_PROVIDER: ${RIE_SEARCH_PROVIDER:-bing}
+      RIE_BING_SEARCH_API_KEY: ${RIE_BING_SEARCH_API_KEY:-}
+      RIE_MAX_DISCOVERED_EVIDENCE: ${RIE_MAX_DISCOVERED_EVIDENCE:-5}
+      RIE_REMOTE_MEDIA_ENABLED: ${RIE_REMOTE_MEDIA_ENABLED:-true}
+      RIE_TRANSCRIPTION_ENABLED: ${RIE_TRANSCRIPTION_ENABLED:-false}
+      RIE_WHISPER_MODEL: ${RIE_WHISPER_MODEL:-tiny}
+      RIE_VIDEO_KEYFRAME_FPS: ${RIE_VIDEO_KEYFRAME_FPS:-0.2}
+      HF_HOME: /app/data/huggingface
     ports:
-      - "127.0.0.1:8082:8082"
+      - "8082:8082"
     volumes:
-      - rie-data:/data
+      - rie-data:/app/data
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev

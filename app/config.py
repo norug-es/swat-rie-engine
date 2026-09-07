@@ -4,9 +4,17 @@ class Settings(BaseSettings):
     app_name: str = "SWAT Reality Intelligence Engine"
     app_version: str = "0.1.0"
     api_key: str = "change-me"
+    public_url: str = "http://localhost:8000"
     db_url: str = "sqlite:///./data/rie.db"
     fetch_timeout_seconds: float = 12.0
     max_source_chars: int = 30000
+    max_upload_bytes: int = 50 * 1024 * 1024
+    remote_media_enabled: bool = True
+    remote_media_timeout_seconds: int = 90
+    artifact_dir: str = "./data/artifacts"
+    transcription_enabled: bool = False
+    whisper_model: str = "tiny"
+    video_keyframe_fps: float = 0.2
     user_agent: str = "SWAT-RIE/0.1 (+https://norug.es)"
     autonomous_search_enabled: bool = False
     search_provider: str = "bing"

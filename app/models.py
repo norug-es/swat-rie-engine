@@ -29,6 +29,11 @@ class VerifyRequest(BaseModel):
 class MediaSearchRequest(BaseModel):
     text: str | None = Field(default=None, min_length=3, max_length=50000)
     url: HttpUrl | None = None
+    sha256: str | None = Field(default=None, min_length=64, max_length=64)
+
+
+class MediaUrlRequest(BaseModel):
+    url: HttpUrl
 
 class EvidenceDiscoveryRequest(BaseModel):
     query: str = Field(min_length=3, max_length=500)
@@ -53,6 +58,23 @@ class ReverseSearchProviderStatus(BaseModel):
     provider: str
     status: Literal["CONFIGURED", "MISSING_CONFIG", "MANUAL_ONLY"]
     capability: str
+
+class MediaPipelineStage(BaseModel):
+    stage: str
+    status: Literal["COMPLETE", "MISSING_CONFIG", "MISSING_TOOL", "SKIPPED", "FAILED"]
+    detail: str | None = None
+
+class MediaArtifactResponse(BaseModel):
+    artifact_id: str
+    filename: str
+    input_type: Literal["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "UNKNOWN"]
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    storage_path: str
+    metadata: dict[str, Any]
+    pipeline: list[MediaPipelineStage]
+    created_at: str
 
 class EvidenceItem(BaseModel):
     evidence_id: str
@@ -115,7 +137,8 @@ class MediaSearchResponse(BaseModel):
     previously_seen: bool
     similarity: float
     investigation_id: str | None = None
-    matched_on: Literal["content_hash", "source_url", "none"]
+    artifact_id: str | None = None
+    matched_on: Literal["content_hash", "source_url", "artifact_hash", "none"]
 
 class VerifyResponse(BaseModel):
     investigation_id: str
